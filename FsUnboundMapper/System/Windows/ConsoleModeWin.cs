@@ -1,7 +1,7 @@
-﻿using static FsUnboundMapper.Windows.ConsoleModeWin32Native;
+﻿using FsUnboundMapper.Windows;
 using System;
 using System.Runtime.InteropServices;
-using FsUnboundMapper.Windows;
+using static FsUnboundMapper.Windows.ConsoleModeWin32Native;
 
 namespace FsUnboundMapper.System.Windows
 {

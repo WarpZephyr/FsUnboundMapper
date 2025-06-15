@@ -1,11 +1,7 @@
 ﻿using FsUnboundMapper.Exceptions;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 
 namespace FsUnboundMapper.Binder
 {
