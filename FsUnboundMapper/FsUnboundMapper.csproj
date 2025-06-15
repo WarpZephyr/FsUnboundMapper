@@ -5,6 +5,29 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\libps3\libps3\libps3.csproj" />
+    <ProjectReference Include="..\SoulsFormatsNEXT\SoulsFormats\SoulsFormats.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\BinderKeys\**\*.*">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <Link>Assets\BinderKeys\%(RecursiveDir)\%(Filename)%(Extension)</Link>
+    </None>
+	  <None Update="..\BinderKeys\.git">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+	  <None Update="..\BinderKeys\.gitattributes">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Assets\" />
+  </ItemGroup>
 
 </Project>

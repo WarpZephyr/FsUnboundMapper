@@ -1,9 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36121.58 d17.14
+VisualStudioVersion = 17.14.36121.58
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FsUnboundMapper", "FsUnboundMapper\FsUnboundMapper.csproj", "{787FD642-3A3C-453C-82FC-EAE2DBBBF1D0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "libps3", "libps3\libps3\libps3.csproj", "{71E59302-33BD-066C-2F9B-66FB613DEEEF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Edoke", "Edoke\Edoke\Edoke.csproj", "{4F631EC8-1812-2937-823F-01955A795ED2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SoulsFormats", "SoulsFormatsNEXT\SoulsFormats\SoulsFormats.csproj", "{BF9315F8-4F70-39BD-E05F-F778BAF76EA4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +21,18 @@ Global
 		{787FD642-3A3C-453C-82FC-EAE2DBBBF1D0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{787FD642-3A3C-453C-82FC-EAE2DBBBF1D0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{787FD642-3A3C-453C-82FC-EAE2DBBBF1D0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71E59302-33BD-066C-2F9B-66FB613DEEEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71E59302-33BD-066C-2F9B-66FB613DEEEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71E59302-33BD-066C-2F9B-66FB613DEEEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71E59302-33BD-066C-2F9B-66FB613DEEEF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4F631EC8-1812-2937-823F-01955A795ED2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4F631EC8-1812-2937-823F-01955A795ED2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4F631EC8-1812-2937-823F-01955A795ED2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4F631EC8-1812-2937-823F-01955A795ED2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BF9315F8-4F70-39BD-E05F-F778BAF76EA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF9315F8-4F70-39BD-E05F-F778BAF76EA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF9315F8-4F70-39BD-E05F-F778BAF76EA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BF9315F8-4F70-39BD-E05F-F778BAF76EA4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

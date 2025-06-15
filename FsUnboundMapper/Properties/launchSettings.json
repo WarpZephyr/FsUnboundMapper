@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FsUnboundMapper": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\Programs\\RPCS3\\games\\BLUS30516\\PS3_GAME\\USRDIR"
+    }
+  }
+}
