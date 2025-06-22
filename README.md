@@ -9,8 +9,8 @@ Primarily for Armored Core games before AC6 for now.
 | :----------------------- | :------------------------------------------------- | :------------------------------------------------- |
 | Armored Core 4           | <ul><li>- [ ] PS3</li><li>- [ ] Xbox 360</li></ul> | <ul><li>- [ ] US</li><li>- [ ] JP</li></ul> |
 | Armored Core For Answer  | <ul><li>- [x] PS3</li><li>- [x] Xbox 360\*</li></ul> | <ul><li>- [x] US</li><li>- [x] JP</li></ul> |
-| Armored Core V           | <ul><li>- [x] PS3</li><li>- [x] Xbox 360</li></ul> | <ul><li>- [x] US</li><li>- ? JP</li></ul> |
-| Armored Core Verdict Day | <ul><li>- [x] PS3</li><li>- [x] Xbox 360</li></ul> | <ul><li>- [x] US</li><li>- ? JP</li></ul> |
+| Armored Core V           | <ul><li>- [x] PS3</li><li>- [x] Xbox 360</li></ul> | <ul><li>- [x] US</li><li> ? JP</li></ul> |
+| Armored Core Verdict Day | <ul><li>- [x] PS3</li><li>- [x] Xbox 360</li></ul> | <ul><li>- [x] US</li><li> ? JP</li></ul> |
 
 \* Armored Core For Answer Xbox 360 support unpacks like the others but the game does not run in this state.
 
@@ -38,9 +38,7 @@ Clone this project with the following command:
 git clone --recursive https://github.com/WarpZephyr/FsUnboundMapper.git  
 ```
 This is recursive because the project also makes use of the following submodule:  
-```
 https://github.com/JKAnderson/BinderKeys.git  
-```
 
 This project requires the following libraries to be cloned alongside it.  
 Place them in the same top-level folder as this project.  
