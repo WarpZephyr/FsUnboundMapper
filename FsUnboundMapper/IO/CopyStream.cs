@@ -49,21 +49,32 @@ namespace FsUnboundMapper.IO
 
         public override int Read(byte[] buffer, int offset, int count)
         {
-            int length = count;
-            long remaining = Remaining;
-            if ((ulong)count > (ulong)remaining)
+            lock (BaseStream)
             {
-                if (remaining < 1)
+                long oldPos = BaseStream.Position;
+                long offsetPos = Origin + Offset;
+                if (BaseStream.Position != offsetPos)
                 {
-                    return 0;
+                    BaseStream.Seek(offsetPos, SeekOrigin.Begin);
                 }
 
-                length = (int)remaining;
-            }
+                int length = count;
+                long remaining = Remaining;
+                if ((ulong)count > (ulong)remaining)
+                {
+                    if (remaining < 1)
+                    {
+                        return 0;
+                    }
 
-            int read = BaseStream.Read(buffer, offset, length);
-            Offset += read;
-            return read;
+                    length = (int)remaining;
+                }
+
+                int read = BaseStream.Read(buffer, offset, length);
+                Offset += read;
+                BaseStream.Seek(oldPos, SeekOrigin.Begin);
+                return read;
+            }
         }
 
         public override long Seek(long offset, SeekOrigin origin)

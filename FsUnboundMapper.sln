@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SoulsFormats", "..\SoulsFor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Edoke", "..\Edoke\Edoke\Edoke.csproj", "{4F631EC8-1812-2937-823F-01955A795ED2}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XenonFormats", "..\XenonFormats\XenonFormats\XenonFormats.csproj", "{6ED109F7-FCAC-7AFE-4A70-07EC65FF89AF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{4F631EC8-1812-2937-823F-01955A795ED2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4F631EC8-1812-2937-823F-01955A795ED2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4F631EC8-1812-2937-823F-01955A795ED2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6ED109F7-FCAC-7AFE-4A70-07EC65FF89AF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6ED109F7-FCAC-7AFE-4A70-07EC65FF89AF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6ED109F7-FCAC-7AFE-4A70-07EC65FF89AF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6ED109F7-FCAC-7AFE-4A70-07EC65FF89AF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

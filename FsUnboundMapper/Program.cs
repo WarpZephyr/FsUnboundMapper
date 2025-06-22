@@ -21,15 +21,15 @@ namespace FsUnboundMapper
             AppDataFolder = AppInfo.AppDirectory;
         }
 
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
-            await AppInitAsync(args);
+            AppInit(args);
         }
 
         #region Initialization
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static async Task AppInitAsync(string[] args)
+        static void AppInit(string[] args)
         {
 #if !DEBUG
             try
@@ -42,7 +42,7 @@ namespace FsUnboundMapper
             try
             {
                 // Wrap functionality in try catch so user errors can be caught and show a friendlier message without a stacktrace
-                await AppRunAsync(args);
+                AppRun(args);
             }
             catch (UserErrorException ex)
             {
@@ -67,7 +67,7 @@ namespace FsUnboundMapper
         #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static Task AppRunAsync(string[] args)
+        static void AppRun(string[] args)
         {
             Log.DirectWriteLine($"Running {AppName}.");
 
@@ -106,25 +106,19 @@ namespace FsUnboundMapper
             }
 
             // Process arguments
-            var tasks = new List<Task>();
             foreach (string arg in args)
             {
                 Log.WriteLine($"Processing: \"{arg}\"");
                 if (Directory.Exists(arg) || File.Exists(arg))
                 {
-                    var mapper = new UnboundMapper(AppDataFolder, arg);
-                    tasks.Add(mapper.RunAsync());
+                    var mapper = new UnboundMapper(arg);
+                    mapper.Run();
                 }
                 else
                 {
                     Log.WriteLine($"Warning: No file or folder exists at: \"{arg}\"");
                 }
             }
-
-            if (tasks.Count < 1)
-                return Task.CompletedTask;
-
-            return Task.WhenAll(tasks);
         }
 
         #region Initialization Helpers

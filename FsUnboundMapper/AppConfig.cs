@@ -48,6 +48,7 @@ namespace FsUnboundMapper
         public int ConfigVersion;
         public GameType ManualGameOverride;
         public PlatformType ManualPlatformOverride;
+        public RegionType ManualRegionOverride;
         public bool SkipUnknownFiles;
         public bool LowercaseFileNames;
         public bool HidePackedFiles;
@@ -58,8 +59,9 @@ namespace FsUnboundMapper
         public AppConfig()
         {
             ConfigVersion = CurrentConfigVersion;
-            ManualGameOverride = GameType.ArmoredCoreVerdictDay;
-            ManualPlatformOverride = PlatformType.PlayStation3;
+            ManualGameOverride = GameType.None;
+            ManualPlatformOverride = PlatformType.None;
+            ManualRegionOverride = RegionType.None;
             SkipUnknownFiles = false;
             LowercaseFileNames = true;
             HidePackedFiles = true;

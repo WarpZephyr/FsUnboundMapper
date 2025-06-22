@@ -1,265 +1,833 @@
 ﻿using FsUnboundMapper.Binder;
-using FsUnboundMapper.Binder.Strategy;
 using FsUnboundMapper.Cryptography;
 using FsUnboundMapper.Exceptions;
+using FsUnboundMapper.IO;
 using FsUnboundMapper.Logging;
 using libps3;
 using SoulsFormats;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Threading.Tasks;
+using XenonFormats;
 
 namespace FsUnboundMapper
 {
     internal class UnboundMapper
     {
-        private readonly string AppRoot;
         private string Root;
         private GameType Game;
         private PlatformType Platform;
+        private RegionType Region;
 
-        public UnboundMapper(string appRoot, string root)
+        public UnboundMapper(string root)
         {
-            AppRoot = appRoot;
             Root = root;
             Game = AppConfig.Instance.ManualGameOverride;
             Platform = AppConfig.Instance.ManualPlatformOverride;
+            Region = AppConfig.Instance.ManualRegionOverride;
         }
 
-        public Task RunAsync()
+        public void Run()
         {
             Log.WriteLine("Running automatic detection where applicable...");
             DetectPlatform();
             DetectRoot();
             DetectGame();
 
-            Log.WriteLine($"Determined platform as {Platform} and game as {Game}.");
-            Log.WriteLine($"Determined root folder as: {Root}");
+            Log.WriteLine($"Determined platform as {Platform}.");
+            Log.WriteLine($"Determined game as {Game}.");
+            Log.WriteLine($"Determined region as {Region}.");
+            Log.WriteLine($"Determined root folder as: \"{Root}\"");
 
             Log.WriteLine($"Mapping {Game}...");
             switch (Game)
             {
                 case GameType.ArmoredCoreForAnswer:
-                    return RunAcfaAsync();
+                    RunAcfa();
+                    break;
                 case GameType.ArmoredCoreV:
-                    return RunAcvAsync();
+                    RunAcv();
+                    break;
                 case GameType.ArmoredCoreVerdictDay:
-                    return RunAcvdAsync();
+                    RunAcvd();
+                    break;
                 default:
                     throw new UserErrorException("Could not determine a valid game.");
             }
         }
 
-        private Task RunAcfaAsync()
+        private void RunAcfa()
         {
+            // Lowercase all unpacked names
             string bindDir = Path.Combine(Root, "bind");
-            if (!CheckDirectory(bindDir))
-                return Task.CompletedTask;
+            if (!CheckDirectoryExists(bindDir))
+                return;
 
-            throw new NotImplementedException();
+            // Unpack "/bind/boot.bnd"
+            //   - Unpack to "/" if not sorting
+            //   - Sort files for later JP region versions
+            UnpackBootAcfa(bindDir);
+
+            // Unpack "/bind/boot_2nd.bnd"
+            //   - Sort files
+            //   - Unpack "/sfx_ps3_shader.bnd" to "/sfx/shader/" for the PS3 platform
+            //   - Unpack "/sfx_xenon_shader.bnd" to "/sfx/shader/" for the Xbox 360 platform
+            //   - Unpack "/dc0000_t.bnd" to "/model/decal/dc0000/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/camouflage_t.bnd" to "/model/image/camouflage/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/sandstorm_t.bnd" to "/model/radar/sandstorm/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/dof_t.bnd" to "/model/filter/dof/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/oldfilm_t.bnd" to "/model/filter/oldfilm/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/lensflare_t.bnd" to "/model/filter/lensflare/" and move tpfs/xprs to "/tex/" below it
+            //   - Unpack "/shakednoise_t.bnd" to "/model/filter/shakednoise/" and move tpfs/xprs to "/tex/" below it
+            UnpackBoot2ndAcfa(bindDir);
+
+            // Unpack "/bind/ingamescript.bnd" to "/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "ingamescript.bnd"), Root);
+
+            // Unpack "/bind/menustay.bnd" to "/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "menustay.bnd"), Root);
+
+            // Unpack "/bind/sortie.bnd" to "/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "sortie.bnd"), Root);
+
+            // Unpack "/bind/tutorial.bnd" to "/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "tutorial.bnd"), Root);
+
+            // Unpack "/bind/thumbnail.bnd" to "/thumbnail/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "thumbnail.bnd"),
+                Path.Combine(Root, "thumbnail"));
+
+            // Unpack "/bind/material.bnd" to "/material/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "material.bnd"),
+                Path.Combine(Root, "material"));
+
+            // Unpack "/bind/scene.bnd" to "/scene/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "scene.bnd"),
+                Path.Combine(Root, "scene"));
+
+            // Unpack "/bind/map_sound.bnd" to "/sound/"
+            CheckUnpackBinder3(Path.Combine(bindDir, "map_sound.bnd"),
+                Path.Combine(Root, "sound"));
+
+            // Unpack "/bind/param/accolor.bnd" to "/param/accolor"
+            CheckUnpackBinder3(Path.Combine(bindDir, "param", "accolor.bnd"),
+                Path.Combine(Root, "param", "accolor"));
+
+            // Unpack "/bind/model/image/arena_briefing.bnd" to "/model/image/arena_briefing/tex/"
+            CheckUnpackTexBinder3(Path.Combine(bindDir, "model", "image", "arena_briefing.bnd"),
+                Path.Combine(Root, "model", "image", "arena_briefing"));
+
+            // Unpack "/bind/model/image/pc*.bnd" to "/model/image/pc*/tex/"
+            UnpackEmblemPieceBindersAcfa(bindDir);
+
+            // Unpack lang binders
+            //   - Unpack each region: "es", "fr", "us", "jp"
+            //   - Unpack "/bind/lang/{region}/briefing.bnd" to "/lang/{region}/briefing/"
+            //   - Unpack "/bind/lang/{region}/emblem.bnd" to "/lang/{region}/emblem/"
+            //   - Unpack "/bind/lang/{region}/menu.bnd" to "/lang/{region}/menu/"
+            //   - Unpack "/bind/lang/{region}/nowload.bnd" to "/lang/{region}/nowload/tex/"
+            UnpackLangBindersAcfa(bindDir);
+
+            // Unpack all bnds under "/bind/event/" to "/"
+            CheckUnpackBinder3s("missions", Path.Combine(bindDir, "event"),
+                Root, "*.bnd", SearchOption.TopDirectoryOnly);
+
+            // Unpack "/bind/sfx.bnd"
+            //   - Unpack "/sfx_bin.bhd" to "/sfx/bin/sfx_bin.bhd"
+            //   - Unpack "/sfx_bin.bdt" to "/sfx/bin/sfx_bin.bdt"
+            //   - Unpack "/sfx_m.bnd" to "/model/sfx/"
+            //   - Unpack "/sfx_t.bnd" to "/model/sfx/"
+            //   - Unpack "/sphere.bin" to "/model/sfx/"
+            UnpackSfxAcfa(bindDir);
+
+            string bindModelDir = Path.Combine(bindDir, "model");
+            if (CheckDirectoryExists(bindModelDir))
+            {
+                // Unpack "/bind/model/ene.bnd"
+                //   - Unpack "/e{id}*" to "/model/ene/e{id}/e{id}*"
+                UnpackModelsAcfa(Path.Combine(bindModelDir, "ene.bnd"),
+                    Path.Combine(Root, "model", "ene"), 5);
+
+                // Unpack "/bind/model/obj.bnd"
+                //   - Unpack "/o{id}*" to "/model/obj/o{id}/o{id}*"
+                UnpackModelsAcfa(Path.Combine(bindModelDir, "obj.bnd"),
+                    Path.Combine(Root, "model", "obj"), 5);
+
+                // Unpack "/bind/model/map.bnd"
+                //   - Unpack "/m{id}*" to "/model/map/m{id}/m{id}*"
+                UnpackModelsAcfa(Path.Combine(bindModelDir, "map.bnd"),
+                    Path.Combine(Root, "model", "map"), 4);
+
+                // Unpack "/bind/model/break.bnd"
+                //   - Unpack "/b{id}*" to "/model/break/b{id}/b{id}*"
+                UnpackModelsAcfa(Path.Combine(bindModelDir, "break.bnd"),
+                    Path.Combine(Root, "model", "break"), 5);
+
+                // Unpack AcParts models
+                //   - Unpack "/bind/model/ac/motion/{animType}.bnd" to "/model/ac/motion/{animType}/"
+                //   - Unpack each quality: "ac", "garage"
+                //   - Unpack each kind: "parts", "sub"
+                //   - Unpack each category.
+                //   - Unpack "/bind/model/{quality}/{kind}_{categoryLong}.bnd" to "/model/{quality}/{kind}/{categoryLong}/"
+                //     - Unpack "/{category}{id}*" to "/model/{quality}/{kind}/{categoryLong}/{category}{id}/{category}{id}*"
+                BinderUnpacker.UnpackBinder3sAsFolders(Path.Combine(bindModelDir, "ac", "motion"),
+                    Path.Combine(Root, "model", "ac", "motion"),
+                    "*.bnd", SearchOption.TopDirectoryOnly);
+
+                UnpackAcModelsAcfa(bindModelDir, "ac");
+                UnpackAcModelsAcfa(bindModelDir, "garage");
+            }
+
+            if (AppConfig.Instance.HidePackedFiles &&
+                Platform != PlatformType.Xbox360) // For now ACFA Xbox 360 loose loading doesn't appear to work
+            {
+                HideDirectory(Root, "bind");
+
+                string modelAcPath = Path.Combine(Root, "model", "ac");
+                HideFile(modelAcPath, "parts_arm.bnd");
+                HideFile(modelAcPath, "parts_back.bnd");
+                HideFiles(Path.Combine(modelAcPath, "motion"), "*.bnd");
+            }
         }
 
-        private Task RunAcvAsync()
+        private void RunAcv()
         {
             string bindDir = Path.Combine(Root, "bind");
-            if (!CheckDirectory(bindDir))
-                return Task.CompletedTask;
+            if (!CheckDirectoryExists(bindDir))
+                return;
 
+            UnpackScripts(bindDir);
+            Log.WriteLine("Unpacking \"dvdbnd5.bhd\"...");
             string headerPath = Path.Combine(bindDir, "dvdbnd5.bhd");
             string dataPath = Path.Combine(bindDir, "dvdbnd.bdt");
-            if (!CheckSplitFile(headerPath, dataPath))
-                return UnpackScriptsAsync(bindDir);
+            if (!CheckSplitFileExists(headerPath, dataPath))
+                return;
 
-            return Task.WhenAll([UnpackScriptsAsync(bindDir), UnpackEbls()]);
-            async Task UnpackEbls()
-            {
-                await UnpackEblAsync(headerPath, dataPath);
-                await Task.WhenAll([UnpackBootBindersAsync(bindDir), UnpackMissionsAsync(bindDir)]);
+            BinderUnpacker.UnpackEbl(headerPath, dataPath, Root, Game, Platform);
+            CheckUnpackBinder3(Path.Combine(bindDir, "boot.bnd"), Root);
+            CheckUnpackBinder3(Path.Combine(bindDir, "boot_2nd.bnd"), Root);
+            CheckUnpackBinder3s("missions", Path.Combine(bindDir, "mission"),
+                Root, "*.bnd", SearchOption.TopDirectoryOnly);
 
-                string modelMapDir = Path.Combine(Root, "model", "map");
-                if (CheckDirectory(modelMapDir))
-                    await PackAcvMapsAsync(modelMapDir);
+            string modelMapDir = Path.Combine(Root, "model", "map");
+            if (CheckDirectoryExists(modelMapDir))
+                PackAcvMaps(modelMapDir);
 
-                string soundDir = Path.Combine(Root, "sound");
-                if (AppConfig.Instance.ApplyFmodCrashFix &&
-                    CheckDirectory(soundDir))
-                    ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
+            string soundDir = Path.Combine(Root, "sound");
+            if (AppConfig.Instance.ApplyFmodCrashFix &&
+                CheckDirectoryExists(soundDir))
+                ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
 
-                if (AppConfig.Instance.HidePackedFiles)
-                    HideFile(bindDir, "dvdbnd5.bhd");
-            }
+            if (AppConfig.Instance.HidePackedFiles)
+                HideFile(bindDir, "dvdbnd5.bhd");
         }
 
-        private Task RunAcvdAsync()
+        private void RunAcvd()
         {
             string bindDir = Path.Combine(Root, "bind");
-            if (!CheckDirectory(bindDir))
-                return Task.CompletedTask;
+            if (!CheckDirectoryExists(bindDir))
+                return;
 
+            UnpackScripts(bindDir);
+            Log.WriteLine("Unpacking \"dvdbnd5_layer0.bhd\"...");
             string headerPath0 = Path.Combine(bindDir, "dvdbnd5_layer0.bhd");
             string dataPath0 = Path.Combine(bindDir, "dvdbnd_layer0.bdt");
-            string headerPath1;
-            string dataPath1;
-            if (!CheckSplitFile(headerPath0, dataPath0))
-                return UnpackScriptsAsync(bindDir);
+            if (!CheckSplitFileExists(headerPath0, dataPath0))
+                return;
 
+            BinderUnpacker.UnpackEbl(headerPath0, dataPath0, Root, Game, Platform);
             if (Platform == PlatformType.Xbox360)
             {
-                headerPath1 = Path.Combine(bindDir, "dvdbnd5_layer1.bhd");
-                dataPath1 = Path.Combine(bindDir, "dvdbnd_layer1.bdt");
-                if (!CheckSplitFile(headerPath1, dataPath1))
-                    return UnpackScriptsAsync(bindDir);
-            }
-            else
-            {
-                headerPath1 = string.Empty;
-                dataPath1 = string.Empty;
+                Log.WriteLine("Unpacking \"dvdbnd5_layer1.bhd\"...");
+                string headerPath1 = Path.Combine(bindDir, "dvdbnd5_layer1.bhd");
+                string dataPath1 = Path.Combine(bindDir, "dvdbnd_layer1.bdt");
+                if (!CheckSplitFileExists(headerPath1, dataPath1))
+                    return;
+
+                BinderUnpacker.UnpackEbl(headerPath1, dataPath1, Root, Game, Platform);
             }
 
-            return Task.WhenAll([UnpackScriptsAsync(bindDir), UnpackEbls()]);
-            async Task UnpackEbls()
+            CheckUnpackBinder3(Path.Combine(bindDir, "boot.bnd"), Root);
+            CheckUnpackBinder3(Path.Combine(bindDir, "boot_2nd.bnd"), Root);
+            CheckUnpackBinder3s("missions", Path.Combine(bindDir, "mission"),
+                Root, "*.bnd", SearchOption.TopDirectoryOnly);
+
+            string soundDir = Path.Combine(Root, "sound");
+            if (AppConfig.Instance.ApplyFmodCrashFix &&
+                CheckDirectoryExists(soundDir))
+                ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
+
+            if (AppConfig.Instance.HidePackedFiles)
             {
+                HideFile(bindDir, "dvdbnd5_layer0.bhd");
                 if (Platform == PlatformType.Xbox360)
-                    await Task.WhenAll([UnpackEblAsync(headerPath0, dataPath0), UnpackEblAsync(headerPath1, dataPath1)]);
-                else
-                    await UnpackEblAsync(headerPath0, dataPath0);
-
-                await Task.WhenAll([UnpackBootBindersAsync(bindDir), UnpackMissionsAsync(bindDir)]);
-                string soundDir = Path.Combine(Root, "sound");
-                if (AppConfig.Instance.ApplyFmodCrashFix &&
-                    CheckDirectory(soundDir))
-                    ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
-
-                if (AppConfig.Instance.HidePackedFiles)
                 {
-                    HideFile(bindDir, "dvdbnd5_layer0.bhd");
-                    if (Platform == PlatformType.Xbox360)
-                    {
-                        HideFile(bindDir, "dvdbnd5_layer1.bhd");
-                    }
+                    HideFile(bindDir, "dvdbnd5_layer1.bhd");
                 }
             }
         }
 
         #region Game Run Helpers
 
-        private Task UnpackBootBindersAsync(string bindDir)
+        private void UnpackBootAcfa(string bindDir)
         {
-            Log.WriteLine("Unpacking boot binders...");
+            Log.WriteLine("Unpacking boot...");
             string bootPath = Path.Combine(bindDir, "boot.bnd");
-            string boot2ndPath = Path.Combine(bindDir, "boot_2nd.bnd");
-            bool bootExists = File.Exists(bootPath);
-            bool boot2ndExists = File.Exists(boot2ndPath);
+            if (!CheckFileExists(bootPath))
+                return;
 
-            if (bootExists && boot2ndExists)
+            using var bnd = new BND3Reader(bootPath);
+            if ((bnd.Format & SoulsFormats.Binder.Format.Names2) != 0)
             {
-                return Task.WhenAll([UnpackBinder3Async(bootPath, Root), UnpackBinder3Async(boot2ndPath, Root)]);
-            }
-            else if (bootExists)
-            {
-                Log.WriteLine($"Warning: Could not find boot 2nd binder \"boot_2nd.bnd\" for unpacking from path: {boot2ndPath}");
-                return UnpackBinder3Async(bootPath, Root);
-            }
-            else if (boot2ndExists)
-            {
-                Log.WriteLine($"Warning: Could not find boot binder \"boot.bnd\" for unpacking from path: {bootPath}");
-                return UnpackBinder3Async(boot2ndPath, Root);
+                // The BND3 already has full pathing
+                BinderUnpacker.UnpackBinder3(bootPath, Root);
+                return;
             }
 
-            return Task.CompletedTask;
+            // Should only really become jp for lang region in this case
+            string langRegion;
+            switch (Region)
+            {
+                case RegionType.UnitedStates:
+                case RegionType.Europe:
+                    langRegion = "us";
+                    break;
+                case RegionType.Japan:
+                case RegionType.Asia:
+                    langRegion = "jp";
+                    break;
+                case RegionType.Spanish:
+                    langRegion = "es";
+                    break;
+                case RegionType.France:
+                    langRegion = "fr";
+                    break;
+                default:
+                    langRegion = string.Empty;
+                    break;
+            }
+
+            foreach (var file in bnd.Files)
+            {
+                string outPath;
+                string outName = PathCleaner.CleanComponentPath(file.Name);
+                string fileName = Path.GetFileName(outName); // Just in case...
+                switch (fileName)
+                {
+                    case "enemyparts.bin":
+                    case "fcs.txt":
+                    case "weapon.txt":
+                        outName = Path.Combine("param", "enemy", "parts", fileName);
+                        break;
+                    case "bulletlaunchenemy.bin":
+                    case "enemybulletblade.bin":
+                    case "enemybulletecm.bin":
+                    case "enemybulletenergy.bin":
+                    case "enemybulletexplosion.bin":
+                    case "enemybulletglue.bin":
+                    case "enemybulletmissile.bin":
+                    case "enemybulletrigid.bin":
+                        outName = Path.Combine("param", "enemy", "bullet", fileName);
+                        break;
+                    case "enemybasicparam.bin":
+                    case "enemycommon.bin":
+                    case "enemygraphicsparam.bin":
+                    case "enemyperformanceparam.bin":
+                    case "enemyweapon.bin":
+                        outName = Path.Combine("enemy", fileName);
+                        break;
+                    case "accel.bin":
+                    case "paramlist.xml":
+                        outName = Path.Combine("system", fileName);
+                        break;
+                    case "fontdef.xml":
+                        outName = Path.Combine("font", fileName);
+                        break;
+                    case "font.xvu":
+                    case "font.xpu":
+                    case "font.vpo":
+                    case "font.fpo":
+                        outName = Path.Combine("shader", "font", fileName);
+                        break;
+                    case "ac45_allsound.xgs":
+                    case "ac45_allsound.mgs":
+                    case "magicorchestra.ini":
+                    case "bankset.bin":
+                        outName = Path.Combine("sound", fileName);
+                        break;
+                    case "keyguide.bin":
+                    case "skeyguide.bin":
+                        outName = Path.Combine("lang", langRegion, "system", fileName);
+                        break;
+                    case "assemmenu.bin":
+                    case "acassemblydrawing.bin":
+                    case "actextinfo.bin":
+                    case "missioninfo.bin":
+                    case "trial_missioninfo.bin":
+                        outName = Path.Combine("lang", langRegion, "param", fileName);
+                        break;
+                    case "menusystem.drb":
+                    case "menusystem.xpr":
+                    case "menusystem.tpf":
+                        outName = Path.Combine("lang", langRegion, "menu", fileName);
+                        break;
+                    case "partsexplain_en.fmg":
+                        outName = Path.Combine("lang", "us", "text", fileName);
+                        break;
+                    case "partsexplain_jp.fmg":
+                        outName = Path.Combine("lang", "jp", "text", fileName);
+                        break;
+                    case "partsexplain_es.fmg":
+                        outName = Path.Combine("lang", "es", "text", fileName);
+                        break;
+                    case "partsexplain_fr.fmg":
+                        outName = Path.Combine("lang", "fr", "text", fileName);
+                        break;
+                    case "dialog.fmg":
+                    case "menu.fmg":
+                    case "linehelp_ps3.fmg":
+                    case "linehelp_xbox.fmg":
+                        outName = Path.Combine("lang", langRegion, "text", "menu", fileName);
+                        break;
+                    case "e1_t.bnd":
+                    case "e2_t.bnd":
+                    case "e3_t.bnd":
+                    case "e4_t.bnd":
+                    case "e5_t.bnd":
+                    case "e6_t.bnd":
+                    case "e7_t.bnd":
+                    case "e8_t.bnd":
+                    case "e9_t.bnd":
+                    case "e10_t.bnd":
+                    case "e11_t.bnd":
+                    case "e12_t.bnd":
+                    case "j1_t.bnd":
+                    case "j2_t.bnd":
+                    case "s1_ps3_t.bnd":
+                    case "s1_xbox_t.bnd":
+                        outName = Path.Combine("font", Path.GetFileNameWithoutExtension(outName).Replace("_t", string.Empty), fileName);
+                        break;
+                    case "boot_shader.bnd":
+                        // Handle this earlier to preserve existing shader BNDs with better file dates
+                        outName = Path.Combine("shader", fileName);
+                        outPath = PathCleaner.CreatePath(Root, outName);
+                        if (File.Exists(outPath))
+                            continue;
+
+                        BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+                        continue;
+                    default:
+                        // Examples:
+                        // aaparam.def
+                        // acactrestrictionparam.def
+                        if (fileName.EndsWith(".def"))
+                        {
+                            outName = Path.Combine("param", "def", fileName);
+                        }
+                        // Examples:
+                        // acanimparam.dbp
+                        // acsisdisplaycommon.dbp
+                        else if (fileName.EndsWith(".dbp"))
+                        {
+                            outName = Path.Combine("dbmenu", fileName);
+                        }
+                        // Examples:
+                        // bgm.xib
+                        // bgm.xwb
+                        // bgm.xsb
+                        // bgm.mib
+                        // bgm.mwb
+                        // bgm.msb
+                        else if (fileName.EndsWith(".xib") ||
+                            fileName.EndsWith(".xwb") ||
+                            fileName.EndsWith(".xsb") ||
+                            fileName.EndsWith(".mib") ||
+                            fileName.EndsWith(".mwb") ||
+                            fileName.EndsWith(".msb")) // We should have already handled any actual map MSBs before the sound MSBs (MOSB)
+                        {
+                            outName = Path.Combine("sound", fileName);
+                        }
+                        // Examples:
+                        // e1.ccm
+                        // e2.ccm
+                        // e3.ccm
+                        // j1.ccm
+                        // j2.ccm
+                        // e10.ccf
+                        // s1_xbox.ccf
+                        // s1_ps3.ccf
+                        else if (fileName.EndsWith(".ccm") ||
+                            fileName.EndsWith(".ccf"))
+                        {
+                            outName = Path.Combine("font", Path.GetFileNameWithoutExtension(outName), fileName);
+                        }
+                        // Examples:
+                        // m020_GrassField.mtd
+                        // e4220.mtd
+                        // DefaultAlpha.mtd
+                        else if (fileName.EndsWith(".mtd"))
+                        {
+                            outName = Path.Combine("material", "mtd", fileName);
+                        }
+                        // Examples:
+                        // color0000.bin
+                        // color8010.bin
+                        else if (fileName.Length == 13 &&
+                            fileName.StartsWith("color") &&
+                            fileName.EndsWith(".bin"))
+                        {
+                            outName = Path.Combine("param", "accolor", fileName);
+                        }
+                        else if (fileName.EndsWith(".bin")
+                            || fileName.EndsWith(".param")
+                            || fileName.EndsWith(".xml"))
+                        {
+                            // A few param files have the correct extension:
+                            // destroyap.param
+                            // destroyfall.param
+                            // flocking.param
+
+                            // The xmls that go here:
+                            // jcondata.xml
+                            // enemyjcondata.xml
+
+                            // We should have handled all non-param bins by now
+                            // The outliers that go here:
+                            // partsregulation.bin
+                            // regulation.bin
+                            // acparts.bin
+                            // trial_acparts.bin
+                            outName = Path.Combine("param", fileName);
+                        }
+                        else
+                        {
+                            // Just in case...
+                            Log.WriteLine($"Warning: No known sort path for boot.bnd file: \"{file.Name}\"");
+                            continue;
+                        }
+                        break;
+                }
+
+                outPath = PathCleaner.CreatePath(Root, outName);
+                BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+            }
         }
 
-        private Task UnpackScriptsAsync(string bindDir)
+        private void UnpackBoot2ndAcfa(string bindDir)
+        {
+            Log.WriteLine("Unpacking boot_2nd...");
+            string bootPath = Path.Combine(bindDir, "boot_2nd.bnd");
+            if (!CheckFileExists(bootPath))
+                return;
+
+            using var bnd = new BND3Reader(bootPath);
+            foreach (var file in bnd.Files)
+            {
+                string outName = PathCleaner.CleanComponentPath(file.Name);
+                string outPath;
+                string fileName = Path.GetFileName(outName); // Just in case...
+                switch (fileName)
+                {
+                    case "sfx_xenon_shader.bnd":
+                    case "sfx_ps3_shader.bnd":
+                        // Needs to be unpacked for some reason
+                        outName = Path.Combine("sfx", "shader");
+                        outPath = PathCleaner.CreatePath(Root, outName);
+                        BinderUnpacker.UnpackBinder3(bnd.ReadFile(file), outPath);
+                        continue;
+                    case "debug_shader.bnd":
+                    case "filter_shader.bnd":
+                    case "flver_shader.bnd":
+                    case "static_shader.bnd":
+                        // Handle this earlier to preserve existing shader BNDs with better file dates
+                        outName = Path.Combine("shader", fileName);
+                        outPath = PathCleaner.CreatePath(Root, outName);
+                        if (File.Exists(outPath))
+                            continue;
+
+                        BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+                        continue;
+                    case "dc0000_t.bnd":
+                        // Needs to be unpacked for some reason
+                        outName = Path.Combine("model", "decal", "dc0000");
+                        outPath = Path.Combine(Root, outName);
+                        UnpackTexBinder3(bnd.ReadFile(file), outPath);
+                        continue;
+                    case "camouflage_t.bnd":
+                        // Needs to be unpacked for some reason
+                        outName = Path.Combine("model", "image", "camouflage");
+                        outPath = Path.Combine(Root, outName);
+                        UnpackTexBinder3(bnd.ReadFile(file), outPath);
+                        continue;
+                    case "sandstorm_t.bnd":
+                        // Needs to be unpacked for some reason
+                        outName = Path.Combine("model", "radar", "sandstorm");
+                        outPath = Path.Combine(Root, outName);
+                        UnpackTexBinder3(bnd.ReadFile(file), outPath);
+                        continue;
+                    case "dof_t.bnd":
+                    case "oldfilm_t.bnd":
+                    case "lensflare_t.bnd":
+                    case "shakednoise_t.bnd":
+                        // Needs to be unpacked for some reason
+                        outName = Path.Combine("model", "filter", Path.GetFileNameWithoutExtension(outName).Replace("_t", string.Empty));
+                        outPath = Path.Combine(Root, outName);
+                        UnpackTexBinder3(bnd.ReadFile(file), outPath);
+                        continue;
+                    case "system_env.msb":
+                        outName = Path.Combine("model", "system", fileName);
+                        break;
+                    case "assemmenu.bin":
+                        // Ignore as other archives have better pathing for its many region copies
+                        continue;
+                    default:
+                        if (outName.EndsWith(".mtd"))
+                        {
+                            outName = Path.Combine("material", "mtd", fileName);
+                        }
+                        else if (outName.EndsWith(".mib") ||
+                            outName.EndsWith(".mwb") ||
+                            outName.EndsWith(".msb") ||
+                            outName.EndsWith(".xib") ||
+                            outName.EndsWith(".xwb") ||
+                            outName.EndsWith(".xsb"))
+                        {
+                            outName = Path.Combine("sound", fileName);
+                        }
+                        else
+                        {
+                            // Just in case...
+                            Log.WriteLine($"Warning: No known sort path for boot.bnd file: \"{file.Name}\"");
+                            continue;
+                        }
+                        break;
+                }
+
+                outPath = PathCleaner.CreatePath(Root, outName);
+                BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+            }
+        }
+
+        private void UnpackEmblemPieceBindersAcfa(string bindDir)
+        {
+            // Handle the expected 8 pcXXXX.bnd files
+            Log.WriteLine("Unpacking emblem pieces...");
+            int pcTexIndex = 1;
+            string pcTexName = $"pc{pcTexIndex:D4}";
+            string pcTexPath = Path.Combine(bindDir, "model", "image", $"{pcTexName}.bnd");
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            void NextPcTexPath()
+            {
+                pcTexIndex++;
+                pcTexName = $"pc{pcTexIndex:D4}";
+                pcTexPath = Path.Combine(bindDir, "model", "image", $"{pcTexName}.bnd");
+            }
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            NextPcTexPath();
+            if (CheckFileExists(pcTexPath))
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+
+            // Handle any extra (potentially modded...) pcXXXX.bnd files
+            NextPcTexPath();
+            while (File.Exists(pcTexPath))
+            {
+                UnpackTexBinder3(pcTexPath, Path.Combine(Root, "model", "image", pcTexName));
+                NextPcTexPath();
+            }
+        }
+
+        private void UnpackLangBindersAcfa(string bindDir)
+        {
+            string bindLangDir = Path.Combine(bindDir, "lang");
+            if (CheckDirectoryExists(bindLangDir))
+            {
+                string bindLangJpDir = Path.Combine(bindLangDir, "jp");
+                if (CheckDirectoryExists(bindLangJpDir))
+                {
+                    // Should always exist
+                    Log.WriteLine("Unpacking jp lang...");
+                    CheckSilentUnpackBinder3(
+                        Path.Combine(bindLangJpDir, "emblem.bnd"),
+                        Path.Combine(Root, "lang", "jp", "emblem"));
+
+                    CheckSilentUnpackTexBinder3(
+                        Path.Combine(bindLangJpDir, "nowload.bnd"),
+                        Path.Combine(Root, "lang", "jp", "nowload"));
+
+                    CheckSilentUnpackBinder3(
+                        Path.Combine(bindLangJpDir, "briefing.bnd"),
+                        Path.Combine(Root, "lang", "jp", "briefing"));
+
+                    CheckSilentUnpackBinder3(
+                        Path.Combine(bindLangJpDir, "menu.bnd"),
+                        Path.Combine(Root, "lang", "jp", "menu"));
+                }
+
+                Log.WriteLine("Unpacking other langs...");
+                foreach (string folder in Directory.EnumerateDirectories(bindLangDir))
+                {
+                    string name = Path.GetFileName(folder);
+                    if (name == "jp")
+                        continue; // Already handled
+
+                    string bindLangRegionDir = Path.Combine(bindLangDir, name);
+                    CheckSilentUnpackBinder3(
+                        Path.Combine(bindLangRegionDir, "briefing.bnd"),
+                        Path.Combine(Root, "lang", name, "briefing"));
+
+                    CheckSilentUnpackBinder3(
+                        Path.Combine(bindLangRegionDir, "menu.bnd"),
+                        Path.Combine(Root, "lang", name, "menu"));
+                }
+            }
+        }
+
+        private void UnpackSfxAcfa(string bindDir)
+        {
+            Log.WriteLine("Unpacking sfx...");
+            string sfxBndPath = Path.Combine(bindDir, "sfx.bnd");
+            if (!CheckFileExists(sfxBndPath))
+                return;
+
+            using var bnd = new BND3Reader(sfxBndPath);
+            foreach (var file in bnd.Files)
+            {
+                string outPath;
+                string fileName = Path.GetFileName(file.Name).ToLowerInvariant(); // Just in case...
+                switch (fileName)
+                {
+                    case "sfx_bin.bhd":
+                    case "sfx_bin.bdt":
+                        outPath = PathCleaner.CreatePath(Path.Combine(Root, "sfx", "bin"), fileName);
+                        BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+                        break;
+                    case "sfx_m.bnd":
+                    case "sfx_t.bnd":
+                    case "sphere.bin":
+                        outPath = PathCleaner.CreatePath(Path.Combine(Root, "model", "sfx"), fileName);
+                        BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+                        break;
+                }
+            }
+        }
+
+        private static void UnpackModelsBinderAcfa(BND3Reader bnd, string outDir, int idLength)
+        {
+            foreach (var file in bnd.Files)
+            {
+                string fileName = Path.GetFileName(file.Name).ToLowerInvariant(); // Just in case...
+                string dirName = fileName[..idLength];
+                string bOutDir = Path.Combine(outDir, dirName);
+                string outPath = PathCleaner.CreatePath(bOutDir, fileName);
+                BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+            }
+        }
+
+        private static void UnpackModelsAcfa(string path, string outDir, int idLength)
+        {
+            Log.WriteLine($"Unpacking {Path.GetFileNameWithoutExtension(path)} models...");
+            if (!CheckFileExists(path))
+                return;
+
+            using var bnd = new BND3Reader(path);
+            UnpackModelsBinderAcfa(bnd, outDir, idLength);
+        }
+
+        private void UnpackAcModelsAcfa(string baseDir, string dirName)
+        {
+            Log.WriteLine($"Unpacking {dirName} models...");
+            string dir = Path.Combine(baseDir, dirName);
+            if (!CheckDirectoryExists(dir))
+                return;
+
+            foreach (string file in Directory.EnumerateFiles(dir, "*.bnd", SearchOption.TopDirectoryOnly))
+            {
+                string kind;
+                string categoryLong;
+                string fileName = Path.GetFileNameWithoutExtension(file);
+                int underScoreIndex = fileName.IndexOf('_');
+                if (underScoreIndex != -1)
+                {
+                    kind = fileName[..underScoreIndex];
+                    categoryLong = fileName[(underScoreIndex + 1)..];
+                }
+                else
+                {
+                    Log.WriteLine($"Warning: No known sort path for {dirName} model file: \"{file}\"");
+                    continue;
+                }
+
+                string outDir = Path.Combine(Root, "model", dirName, kind, categoryLong);
+                using var bnd = new BND3Reader(file);
+                UnpackModelsBinderAcfa(bnd, outDir, 6);
+            }
+        }
+
+        private void UnpackScripts(string bindDir)
         {
             Log.WriteLine("Unpacking script binders...");
             string scriptHeaderPath = Path.Combine(bindDir, "script.bhd");
             string scriptDataPath = Path.Combine(bindDir, "script.bdt");
             if (Platform == PlatformType.PlayStation3)
             {
-                HandleSdat(scriptHeaderPath);
-                HandleSdat(scriptDataPath);
+                SdatDecryptor.DecryptIfExists(scriptHeaderPath);
+                SdatDecryptor.DecryptIfExists(scriptDataPath);
             }
 
-            if (!CheckSplitFile(scriptHeaderPath, scriptDataPath))
-                return Task.CompletedTask;
+            if (!CheckSplitFileExists(scriptHeaderPath, scriptDataPath))
+                return;
 
             string aiScriptDir = Path.Combine(Root, "airesource", "script");
             string sceneScriptDir = Path.Combine(Root, "scene");
-            return Core();
-            async Task Core()
+
+            using var bnd = new BXF3Reader(scriptHeaderPath, scriptDataPath);
+            foreach (var file in bnd.Files)
             {
-                using var bnd = new BXF3Reader(scriptHeaderPath, scriptDataPath);
-                foreach (var file in bnd.Files)
-                {
-                    string outName = CleanComponentPath(file.Name);
-                    string baseDir = outName.EndsWith("scene.lc", StringComparison.InvariantCultureIgnoreCase) ? sceneScriptDir : aiScriptDir;
-                    string outPath = CreatePath(baseDir, outName);
-                    if (file.CompressedSize == 0 &&
-                        file.UncompressedSize == 0)
-                    {
-                        File.Create(outPath);
-                        continue;
-                    }
-                    else
-                    {
-                        await File.WriteAllBytesAsync(outPath, bnd.ReadFile(file));
-                    }
-                }
+                string outName = PathCleaner.CleanComponentPath(file.Name);
+                string baseDir = outName.EndsWith("scene.lc", StringComparison.InvariantCultureIgnoreCase) ? sceneScriptDir : aiScriptDir;
+                string outPath = PathCleaner.CreatePath(baseDir, outName);
+                BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
             }
         }
 
-        private Task UnpackMissionsAsync(string bindDir)
+        private static void PackAcvMaps(string dir)
         {
-            Log.WriteLine("Unpacking mission binders...");
-            string missionBindDir = Path.Combine(bindDir, "mission");
-            if (!CheckDirectory(missionBindDir))
-                return Task.CompletedTask;
-
-            return Core();
-            async Task Core()
+            Log.WriteLine("Packing Armored Core V map models and textures...");
+            foreach (var directory in Directory.EnumerateDirectories(dir, "m*", SearchOption.TopDirectoryOnly))
             {
-                foreach (var file in Directory.EnumerateFiles(missionBindDir, "*.bnd", SearchOption.TopDirectoryOnly))
-                {
-                    await UnpackBinder3Async(file, Root);
-                }
+                PackAcvMap(directory);
             }
         }
 
-        private static void HideFile(string dir, string name)
+        private static void PackAcvMap(string dir)
         {
-            string path = Path.Combine(dir, name);
-            if (!File.Exists(path))
-            {
-                return;
-            }
-
-            if (!name.StartsWith('-'))
-            {
-                Log.WriteLine($"Renaming {name} to ensure game does not find it...");
-
-                string newPath = Path.Combine(dir, $"-{name}");
-                File.Move(path, newPath);
-                Log.WriteLine($"Renamed {name} to -{name}");
-            }
-        }
-
-        private Task PackAcvMapsAsync(string dir)
-        {
-            return Core();
-            async Task Core()
-            {
-                Log.WriteLine("Packing Armored Core V map models and textures...");
-                foreach (var directory in Directory.EnumerateDirectories(dir, "m*", SearchOption.TopDirectoryOnly))
-                {
-                    await PackAcvMapAsync(directory);
-                }
-            }
-        }
-
-        private static Task PackAcvMapAsync(string dir)
-        {
-            void SetBinderInfo(BND3 bnd)
+            static void SetBinderInfo(BND3 bnd)
             {
                 bnd.Version = "JP100";
                 bnd.Format = SoulsFormats.Binder.Format.IDs | SoulsFormats.Binder.Format.Names1 | SoulsFormats.Binder.Format.Compression;
@@ -275,22 +843,17 @@ namespace FsUnboundMapper
 
             string mapID = Path.GetFileName(dir);
             string modelBNDPath = Path.Combine(dir, $"{mapID}_m.dcx.bnd");
-            var modelBND = PackBinder3(dir, [".flv", ".hmd", ".smd", ".mlb"]);
-            SetBinderInfo(modelBND);
-
             string textureBNDPath = Path.Combine(dir, $"{mapID}_htdcx.bnd");
-            var textureBND = PackBinder3(dir, ".tpf.dcx", "_l.tpf.dcx");
+
+            var modelBND = BinderUnpacker.PackBinder3(dir, [".flv", ".hmd", ".smd", ".mlb"]);
+            var textureBND = BinderUnpacker.PackBinder3(dir, ".tpf.dcx", "_l.tpf.dcx");
+            SetBinderInfo(modelBND);
             SetBinderInfo(textureBND);
-
-            byte[] modelBytes = modelBND.Write();
-            var modelTask = File.WriteAllBytesAsync(modelBNDPath, modelBytes);
-
-            byte[] textureBytes = textureBND.Write();
-            var textureTask = File.WriteAllBytesAsync(textureBNDPath, textureBytes);
-            return Task.WhenAll([modelTask, textureTask]);
+            modelBND.Write(modelBNDPath);
+            textureBND.Write(textureBNDPath);
         }
 
-        private void ApplyFmodCrashFix(string soundDir, string fmodName)
+        private static void ApplyFmodCrashFix(string soundDir, string fmodName)
         {
             string seWeaponPath = Path.Combine(soundDir, fmodName);
             var soundFI = new FileInfo(seWeaponPath);
@@ -304,9 +867,124 @@ namespace FsUnboundMapper
 
         #endregion
 
+        #region Binder
+
+        private static void UnpackTexBinder3(string path, string destDir)
+        {
+            using BinderReader bnd = new BND3Reader(path);
+            UnpackTexBinder(bnd, destDir);
+        }
+
+        private static void UnpackTexBinder3(byte[] bytes, string destDir)
+        {
+            using BinderReader bnd = new BND3Reader(bytes);
+            UnpackTexBinder(bnd, destDir);
+        }
+
+        private static void UnpackTexBinder(BinderReader bnd, string destDir)
+        {
+            foreach (var file in bnd.Files)
+            {
+                string outName = PathCleaner.CleanComponentPath(file.Name);
+                if (outName.EndsWith(".tpf") ||
+                    outName.EndsWith(".xpr"))
+                {
+                    outName = Path.Combine("tex", outName);
+                }
+
+                string outPath = PathCleaner.CreatePath(destDir, outName);
+                BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
+            }
+        }
+
+        private static void CheckUnpackBinder3(string path, string outPath)
+        {
+            Log.WriteLine($"Unpacking {Path.GetFileNameWithoutExtension(path)}...");
+            if (CheckFileExists(path))
+                BinderUnpacker.UnpackBinder3(path, outPath);
+        }
+
+        private static void CheckSilentUnpackBinder3(string path, string outPath)
+        {
+            if (CheckFileExists(path))
+                BinderUnpacker.UnpackBinder3(path, outPath);
+        }
+
+        private static void CheckUnpackTexBinder3(string path, string outPath)
+        {
+            Log.WriteLine($"Unpacking {Path.GetFileNameWithoutExtension(path)}...");
+            if (CheckFileExists(path))
+                UnpackTexBinder3(path, outPath);
+        }
+
+        private static void CheckSilentUnpackTexBinder3(string path, string outPath)
+        {
+            if (CheckFileExists(path))
+                UnpackTexBinder3(path, outPath);
+        }
+
+        private static void CheckUnpackBinder3s(string name, string dir, string outDir, string wildcard, SearchOption searchOption)
+        {
+            Log.WriteLine($"Unpacking {name}...");
+            if (CheckDirectoryExists(dir))
+                BinderUnpacker.UnpackBinder3s(dir, outDir, wildcard, searchOption);
+        }
+
+        #endregion
+
         #region File
 
-        static void Expand(string path, int length, int chunkSize = 65536)
+        private static void HideFile(string dir, string name)
+        {
+            string path = Path.Combine(dir, name);
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            if (!name.StartsWith('-'))
+            {
+                Log.WriteLine($"Renaming \"{name}\" to ensure the game does not find it...");
+
+                string newPath = Path.Combine(dir, $"-{name}");
+                File.Move(path, newPath);
+                Log.WriteLine($"Renamed \"{name}\" to \"-{name}\"");
+            }
+        }
+
+        private static void HideFiles(string dir, string wildcard)
+        {
+            foreach (string file in Directory.EnumerateFiles(dir, wildcard, SearchOption.TopDirectoryOnly))
+            {
+                string name = Path.GetFileName(file);
+                if (!name.StartsWith('-'))
+                {
+                    Log.WriteLine($"Renaming \"{name}\" to ensure the game does not find it...");
+
+                    string newPath = Path.Combine(dir, $"-{name}");
+                    File.Move(file, newPath);
+                    Log.WriteLine($"Renamed \"{name}\" to \"-{name}\"");
+                }
+            }
+        }
+
+        private static void HideDirectory(string dir, string name)
+        {
+            string path = Path.Combine(dir, name);
+            if (!Directory.Exists(path))
+                return;
+
+            if (!name.StartsWith('-'))
+            {
+                Log.WriteLine($"Renaming \"{name}\" to ensure the game does not find it...");
+
+                string newPath = Path.Combine(dir, $"-{name}");
+                Directory.Move(path, newPath);
+                Log.WriteLine($"Renamed \"{name}\" to \"-{name}\"");
+            }
+        }
+
+        private static void Expand(string path, int length, int chunkSize = 65536)
         {
             using FileStream fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read, chunkSize, FileOptions.SequentialScan);
             int totalChunks = length / chunkSize;
@@ -323,7 +1001,7 @@ namespace FsUnboundMapper
 
         #region Path
 
-        private bool CheckDirectory(string path)
+        private static bool CheckDirectoryExists(string path)
         {
             if (!Directory.Exists(path))
             {
@@ -334,7 +1012,7 @@ namespace FsUnboundMapper
             return true;
         }
 
-        private bool CheckFile(string path)
+        private static bool CheckFileExists(string path)
         {
             if (!File.Exists(path))
             {
@@ -345,288 +1023,14 @@ namespace FsUnboundMapper
             return true;
         }
 
-        private bool CheckSplitFile(string headerPath, string dataPath)
-            => CheckFile(headerPath) && CheckFile(dataPath);
-
-        private string CreatePath(string baseDir, string name)
-        {
-            string outPath = Path.Combine(baseDir, name);
-            string? outDir = Path.GetDirectoryName(outPath);
-            if (string.IsNullOrEmpty(outDir))
-                throw new Exception($"Could not get folder name of built output path: {outPath}");
-
-            Directory.CreateDirectory(outDir);
-            return outPath;
-        }
-
-        private string CleanComponentPath(string path)
-        {
-            path = RemovePathRoot(path);
-            path = NormalizePathSlashes(path);
-            path = SetPathCasing(path);
-            return path;
-        }
-
-        private string SetPathCasing(string path)
-        {
-            if (AppConfig.Instance.LowercaseFileNames)
-            {
-                path = path.ToLowerInvariant();
-            }
-
-            return path;
-        }
-
-        private string RemovePathRoot(string path)
-        {
-            int rootIndex = path.IndexOf(':');
-            if (rootIndex > -1)
-                path = path[rootIndex..];
-
-            return path;
-        }
-
-        private string NormalizePathSlashes(string path)
-        {
-            path = path.Replace('\\', Path.DirectorySeparatorChar);
-            path = path.Replace('/', Path.DirectorySeparatorChar);
-            path = path.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-            path = path.TrimStart('\\');
-            return path;
-        }
-
-        #endregion
-
-        #region Sdat
-
-        private void HandleSdat(string path)
-        {
-            if (!File.Exists(path))
-            {
-                string sdatPath = path + ".sdat";
-                if (File.Exists(sdatPath))
-                {
-                    Log.WriteLine($"Decrypting sdat: {sdatPath}");
-                    EDAT.DecryptSdatFile(sdatPath, path);
-                }
-            }
-        }
-
-        #endregion
-
-        #region Binder
-
-        private static BND3 PackBinder3(string dir, Span<string> extensions)
-        {
-            var binder = new BND3();
-            int nameIndex = dir.Length + 1;
-            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly))
-            {
-                foreach (string extension in extensions)
-                {
-                    if (file.EndsWith(extension))
-                    {
-                        var bfile = new BinderFile
-                        {
-                            Name = file[nameIndex..],
-                            Bytes = File.ReadAllBytes(file)
-                        };
-                        binder.Files.Add(bfile);
-                        break;
-                    }
-                }
-            }
-
-            return binder;
-        }
-
-        private static BND3 PackBinder3(string dir, string extension, string excludeExtension)
-        {
-            var binder = new BND3();
-            int nameIndex = dir.Length + 1;
-            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly))
-            {
-                if (file.EndsWith(extension) &&
-                    !file.EndsWith(excludeExtension))
-                {
-                    var bfile = new BinderFile
-                    {
-                        Name = file[nameIndex..],
-                        Bytes = File.ReadAllBytes(file)
-                    };
-
-                    binder.Files.Add(bfile);
-                }
-            }
-
-            return binder;
-        }
-
-        private Task UnpackBinder3Async(string path, string destDir)
-        {
-            BinderReader reader = new BND3Reader(path);
-            return UnpackBinderAsync(reader, destDir);
-        }
-
-        private Task UnpackSplitBinder3Async(string headerPath, string dataPath, string destDir)
-        {
-            BinderReader reader = new BXF3Reader(headerPath, dataPath);
-            return UnpackBinderAsync(reader, destDir);
-        }
-
-        private async Task UnpackBinderAsync(BinderReader bnd, string destDir)
-        {
-            foreach (var file in bnd.Files)
-            {
-                string outName = file.Name;
-                int rootIndex = outName.IndexOf(':');
-                if (rootIndex > -1)
-                    outName = outName[rootIndex..];
-
-                outName = outName.Replace('\\', Path.DirectorySeparatorChar);
-                outName = outName.Replace('/', Path.DirectorySeparatorChar);
-                outName = outName.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-                outName = outName.TrimStart('\\');
-
-                string outPath = Path.Combine(destDir, outName);
-                string? outDir = Path.GetDirectoryName(outPath);
-                if (string.IsNullOrEmpty(outDir))
-                    throw new Exception($"Could not get folder name of built output path: {outPath}");
-
-                Directory.CreateDirectory(outDir);
-                if (file.CompressedSize == 0 &&
-                    file.UncompressedSize == 0)
-                {
-                    File.Create(outPath);
-                    continue;
-                }
-                else
-                {
-                    await File.WriteAllBytesAsync(outPath, bnd.ReadFile(file));
-                }
-            }
-
-            bnd.Dispose();
-        }
-
-        #endregion
-
-        #region BinderKeys
-
-        private string GetBinderKeysName()
-        {
-            string game;
-            switch (Game)
-            {
-                case GameType.ArmoredCoreV:
-                    game = "ArmoredCore5";
-                    break;
-                case GameType.ArmoredCoreVerdictDay:
-                    game = "ArmoredCoreVerdictDay";
-                    break;
-                default:
-                    throw new NotSupportedException($"{nameof(GameType)} {Game} is currently not supported in method: {nameof(GetBinderKeysName)}");
-            }
-
-            string platform;
-            switch (Platform)
-            {
-                case PlatformType.PlayStation3:
-                    platform = "PS3";
-                    break;
-                case PlatformType.Xbox360:
-                    platform = "X360";
-                    break;
-                default:
-                    throw new NotSupportedException($"{nameof(PlatformType)} {Platform} is currently not supported in method: {nameof(GetBinderKeysName)}");
-            }
-
-            return $"{game}_{platform}";
-        }
-
-        private string GetBinderKeysAssetDirectory()
-            => Path.Combine(AppRoot, "Assets", "BinderKeys", GetBinderKeysName());
-
-        #endregion
-
-        #region Ebl
-
-        private BHD5.Game GetEblVersion()
-        {
-            switch (Game)
-            {
-                case GameType.ArmoredCoreV:
-                case GameType.ArmoredCoreVerdictDay:
-                    return BHD5.Game.DarkSouls1;
-                default:
-                    throw new NotSupportedException($"{nameof(GameType)} {Game} is currently not supported in method: {nameof(GetEblVersion)}");
-            }
-        }
-
-        private bool EblUses64BitHashes(BHD5.Game version)
-            => version >= BHD5.Game.EldenRing;
-
-        private ModulusBucketIndexStrategy GetEblIndexingStrategy(BHD5 bhd5)
-            => new ModulusBucketIndexStrategy(bhd5.Buckets.Count);
-
-        private EblReader OpenEbl(string headerPath, string dataPath)
-        {
-            string headerName = Path.GetFileNameWithoutExtension(headerPath);
-            string binderKeysDir = GetBinderKeysAssetDirectory();
-            string hashDir = Path.Combine(binderKeysDir, "Hash");
-            string keyDir = Path.Combine(binderKeysDir, "Key");
-            string hashPath = Path.Combine(hashDir, $"{headerName}.txt");
-            string keyPath = Path.Combine(keyDir, $"{headerName}.pem");
-
-            var version = GetEblVersion();
-            var nameDictionary = new BinderHashDictionary(EblUses64BitHashes(version));
-            if (File.Exists(hashPath))
-                nameDictionary.AddRange(File.ReadAllLines(hashPath));
-
-            string? key;
-            if (File.Exists(keyPath))
-                key = File.ReadAllText(keyPath);
-            else
-                key = null;
-
-            BHD5 header;
-            if (key != null)
-                header = BHD5.Read(Rsa.Decrypt(headerPath, key), version);
-            else
-                header = BHD5.Read(headerPath, version);
-
-            var indexingStrategy = GetEblIndexingStrategy(header);
-            var config = new EblReaderConfig
-            {
-                NameDictionary = nameDictionary,
-                IndexingStrategy = indexingStrategy,
-                LeaveDataOpen = false
-            };
-
-            var dfs = File.OpenRead(dataPath);
-            return new EblReader(config, header, dfs);
-        }
-
-        private async Task UnpackEblAsync(string headerPath, string dataPath)
-        {
-            Log.WriteLine($"Unpacking binder \"{Path.GetFileNameWithoutExtension(headerPath)}\"...");
-            using var ebl = OpenEbl(headerPath, dataPath);
-            foreach (var file in ebl.EnumerateFiles())
-            {
-                if (AppConfig.Instance.SkipUnknownFiles && file.PathUnknown)
-                    continue;
-
-                string outName = CleanComponentPath(file.Path);
-                string outPath = CreatePath(Root, outName);
-                await file.WriteToAsync(outPath);
-            }
-        }
+        private static bool CheckSplitFileExists(string headerPath, string dataPath)
+            => CheckFileExists(headerPath) && CheckFileExists(dataPath);
 
         #endregion
 
         #region Detect Platform
 
-        public void DetectPlatform()
+        private void DetectPlatform()
         {
             if (Platform != PlatformType.None &&
                 Platform != PlatformType.Unknown)
@@ -668,7 +1072,7 @@ namespace FsUnboundMapper
             throw new UserErrorException($"Error: Cannot determine {nameof(PlatformType)} from path: {Root}");
         }
 
-        static bool FindPlatformByFile(string file, out PlatformType platform)
+        private static bool FindPlatformByFile(string file, out PlatformType platform)
         {
             if (File.Exists(file))
             {
@@ -695,7 +1099,7 @@ namespace FsUnboundMapper
             return false;
         }
 
-        static bool FindPlatformByFolder(ref string root, string folder, out PlatformType platform)
+        private static bool FindPlatformByFolder(ref string root, string folder, out PlatformType platform)
         {
             if (FindPlatformByFile(Path.Combine(folder, "EBOOT.BIN"), out platform))
             {
@@ -720,7 +1124,7 @@ namespace FsUnboundMapper
 
         #region Detect Root
 
-        public void DetectRoot()
+        private void DetectRoot()
         {
             // Check the possible files
             if (CheckPlatformFileExists(Root, Platform))
@@ -751,7 +1155,7 @@ namespace FsUnboundMapper
             throw new UserErrorException($"Cannot determine root path from {nameof(PlatformType)} {Platform} and path: {Root}");
         }
 
-        static bool CheckPlatformFileExists(string file, PlatformType platform)
+        private static bool CheckPlatformFileExists(string file, PlatformType platform)
         {
             if (File.Exists(file))
             {
@@ -779,7 +1183,7 @@ namespace FsUnboundMapper
             return false;
         }
 
-        static bool CheckPlatformFolderExists(ref string root, string folder, PlatformType platform)
+        private static bool CheckPlatformFolderExists(ref string root, string folder, PlatformType platform)
         {
             if (platform == PlatformType.PlayStation3)
             {
@@ -810,7 +1214,7 @@ namespace FsUnboundMapper
 
         #region Detect Game
 
-        public void DetectGame()
+        private void DetectGame()
         {
             if (Game != GameType.None &&
                 Game != GameType.Unknown)
@@ -820,7 +1224,23 @@ namespace FsUnboundMapper
             }
 
             Log.WriteLine("Attempting to determine game by checking platform...");
-            Game = FindGameByPlatform();
+            Game = FindGameByPlatform(out RegionType region);
+
+            // Simplify for now
+            switch (region)
+            {
+                case RegionType.All:
+                    region = RegionType.None;
+                    break;
+                case RegionType.Asia:
+                    region = RegionType.Japan;
+                    break;
+            }
+
+            if (region != RegionType.None ||
+                region != RegionType.Unknown)
+                Region = region;
+
             if (Game != GameType.Unknown && Game != GameType.None)
                 return;
 
@@ -833,14 +1253,9 @@ namespace FsUnboundMapper
             throw new UserErrorException($"Error: Game could not be determined from {nameof(PlatformType)} {Platform} and path: {Root}");
         }
 
-        GameType FindGameByFile()
+        private GameType FindGameByFile()
         {
-            string sysDir = Path.Combine(Root, "system");
-            string ac45Path = Path.Combine(sysDir, "ac45.ini");
-            if (File.Exists(ac45Path))
-            {
-                return GameType.ArmoredCoreForAnswer;
-            }
+            // TODO ACFA
 
             string bindDir = Path.Combine(Root, "bind");
             string acvPath = Path.Combine(bindDir, "dvdbnd.bdt");
@@ -858,73 +1273,171 @@ namespace FsUnboundMapper
             return GameType.Unknown;
         }
 
-        GameType FindGameByPlatform()
+        private GameType FindGameByPlatform(out RegionType region)
         {
             if (Platform == PlatformType.PlayStation3)
             {
                 Log.WriteLine("Attempting to determine game by PARAM.SFO...");
                 if (TryReadParamSfo(out PARAMSFO? sfo))
                 {
-                    return FindGameBySFO(sfo);
+                    return FindGameBySFO(sfo, out region);
                 }
                 else
                 {
                     Log.WriteLine("Warning: PARAM.SFO could not be found or was invalid.");
                 }
             }
-
-            return GameType.Unknown;
-        }
-
-        GameType FindGameBySFO(PARAMSFO sfo)
-        {
-            // Try to find the title name
-            if (sfo.Parameters.TryGetValue("TITLE", out PARAMSFO.Parameter? parameter))
+            else if (Platform == PlatformType.Xbox360)
             {
-                switch (parameter.Data)
+                Log.WriteLine("Attempting to determine game by XEX...");
+                XEX2? xex;
+                string xexPath = Path.Combine(Root, "default.xex");
+                string xexPath2 = Path.Combine(Root, "Release.xex");
+                if (File.Exists(xexPath))
                 {
-                    case "ARMORED CORE for Answer":
-                        return GameType.ArmoredCoreForAnswer;
-                    case "ARMORED CORE V":
-                        return GameType.ArmoredCoreV;
-                    case "Armored Core Verdict Day":
-                    case "Armored Core™: Verdict Day™":
-                        return GameType.ArmoredCoreVerdictDay;
+                    xex = XEX2.Read(xexPath);
+                }
+                else if (File.Exists(xexPath2))
+                {
+                    xex = XEX2.Read(xexPath2);
+                }
+                else
+                {
+                    xex = null;
+                }
+
+                if (xex != null)
+                {
+                    region = XexHelper.GetRegionType(xex);
+                    var game = FindGameByTitleID(XexHelper.GetTitleId(xex));
+                    if (game == GameType.None ||
+                        game == GameType.Unknown)
+                    {
+                        game = FindGameByOriginalPeName(XexHelper.GetOriginalPeName(xex));
+                    }
+
+                    return game;
                 }
             }
 
+            region = RegionType.None;
+            return GameType.Unknown;
+        }
+
+        private static GameType FindGameBySFO(PARAMSFO sfo, out RegionType region)
+        {
             // Try to find the title ID
-            if (sfo.Parameters.TryGetValue("TITLE_ID", out parameter))
+            if (sfo.Parameters.TryGetValue("TITLE_ID", out PARAMSFO.Parameter? parameter))
             {
                 switch (parameter.Data)
                 {
                     case "BLJM55005":
                     case "BLJM60066":
+                        region = RegionType.Japan;
+                        return GameType.ArmoredCoreForAnswer;
                     case "BLUS30187":
+                        region = RegionType.UnitedStates;
+                        return GameType.ArmoredCoreForAnswer;
                     case "BLES00370":
+                        region = RegionType.Europe;
                         return GameType.ArmoredCoreForAnswer;
                     case "BLKS20356":
+                        region = RegionType.Korea;
+                        return GameType.ArmoredCoreV;
                     case "BLAS50448":
+                        region = RegionType.Asia;
+                        return GameType.ArmoredCoreV;
                     case "BLJM60378":
+                        region = RegionType.Japan;
+                        return GameType.ArmoredCoreV;
                     case "BLUS30516":
+                        region = RegionType.UnitedStates;
+                        return GameType.ArmoredCoreV;
                     case "BLES01440":
+                        region = RegionType.Europe;
                         return GameType.ArmoredCoreV;
                     case "BLKS20441":
+                        region = RegionType.Korea;
+                        return GameType.ArmoredCoreVerdictDay;
                     case "BLAS50618":
+                        region = RegionType.Asia;
+                        return GameType.ArmoredCoreVerdictDay;
                     case "BLJM61014":
                     case "BLJM61020":
+                        region = RegionType.Japan;
+                        return GameType.ArmoredCoreVerdictDay;
                     case "BLUS31194":
-                    case "BLES01898":
                     case "NPUB31245":
+                        region = RegionType.UnitedStates;
+                        return GameType.ArmoredCoreVerdictDay;
+                    case "BLES01898":
                     case "NPEB01428":
+                        region = RegionType.Europe;
                         return GameType.ArmoredCoreVerdictDay;
                 }
+            }
+
+            // Try to find the title name
+            if (sfo.Parameters.TryGetValue("TITLE", out parameter))
+            {
+                switch (parameter.Data)
+                {
+                    case "ARMORED CORE for Answer":
+                        region = RegionType.None;
+                        return GameType.ArmoredCoreForAnswer;
+                    case "ARMORED CORE V":
+                        region = RegionType.None;
+                        return GameType.ArmoredCoreV;
+                    case "Armored Core Verdict Day":
+                    case "Armored Core™: Verdict Day™":
+                        region = RegionType.None;
+                        return GameType.ArmoredCoreVerdictDay;
+                }
+            }
+
+            region = RegionType.None;
+            return GameType.Unknown;
+        }
+
+        private static GameType FindGameByTitleID(string titleID)
+        {
+            switch (titleID)
+            {
+                case "FS2010":
+                case "465307DA":
+                    return GameType.ArmoredCoreForAnswer;
+                case "NM2127":
+                case "4E4D084F":
+                    return GameType.ArmoredCoreV;
+                // Also has the same title ID as ACV as an alternative title ID
+                case "NM2131": // Alternative
+                case "4E4D0853":
+                case "NM2132": // Alternative
+                case "4E4D0854":
+                case "NM2148":
+                case "4E4D0864":
+                    return GameType.ArmoredCoreVerdictDay;
             }
 
             return GameType.Unknown;
         }
 
-        bool TryReadParamSfo([NotNullWhen(true)] out PARAMSFO? sfo)
+        private static GameType FindGameByOriginalPeName(string titleID)
+        {
+            switch (titleID)
+            {
+                case "AC45 - xenon.exe":
+                    return GameType.ArmoredCoreForAnswer;
+                case "ACV.exe":
+                    return GameType.ArmoredCoreV;
+                case "ACV2.exe":
+                    return GameType.ArmoredCoreVerdictDay;
+            }
+
+            return GameType.Unknown;
+        }
+
+        private bool TryReadParamSfo([NotNullWhen(true)] out PARAMSFO? sfo)
         {
             // Get the USRDIR folder
             if (Root.EndsWith("USRDIR"))

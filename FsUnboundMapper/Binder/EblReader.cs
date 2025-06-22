@@ -1,4 +1,6 @@
 ﻿using Edoke.IO;
+using FsUnboundMapper.Binder.Strategy;
+using FsUnboundMapper.Cryptography;
 using FsUnboundMapper.IO;
 using FsUnboundMapper.IO.Buffers;
 using SoulsFormats;
@@ -26,9 +28,73 @@ namespace FsUnboundMapper.Binder
             DataReader = new BinaryStreamReader(data, false, config.LeaveDataOpen);
         }
 
+        #region Factory
+
+        private static BHD5.Game GetEblVersion(GameType game)
+        {
+            switch (game)
+            {
+                case GameType.ArmoredCoreV:
+                case GameType.ArmoredCoreVerdictDay:
+                    return BHD5.Game.DarkSouls1;
+                default:
+                    throw new NotSupportedException($"{nameof(GameType)} {game} is currently not supported in method: {nameof(GetEblVersion)}");
+            }
+        }
+
+        private static bool EblUses64BitHashes(BHD5.Game version)
+            => version >= BHD5.Game.EldenRing;
+
+        private static ModulusBucketIndexStrategy GetEblIndexingStrategy(BHD5 bhd5)
+            => new ModulusBucketIndexStrategy(bhd5.Buckets.Count);
+
+        public static EblReader Open(string headerPath, string dataPath, GameType game, PlatformType platform)
+        {
+            string headerName = Path.GetFileNameWithoutExtension(headerPath);
+            string binderKeysDir = BinderKeys.GetAssetDirectory(game, platform);
+            string hashDir = Path.Combine(binderKeysDir, "Hash");
+            string keyDir = Path.Combine(binderKeysDir, "Key");
+            string hashPath = Path.Combine(hashDir, $"{headerName}.txt");
+            string keyPath = Path.Combine(keyDir, $"{headerName}.pem");
+
+            var version = GetEblVersion(game);
+            var nameDictionary = new BinderHashDictionary(EblUses64BitHashes(version));
+            if (File.Exists(hashPath))
+                nameDictionary.AddRange(File.ReadAllLines(hashPath));
+
+            string? key;
+            if (File.Exists(keyPath))
+                key = File.ReadAllText(keyPath);
+            else
+                key = null;
+
+            BHD5 header;
+            if (key != null)
+                header = BHD5.Read(Rsa.Decrypt(headerPath, key), version);
+            else
+                header = BHD5.Read(headerPath, version);
+
+            var indexingStrategy = GetEblIndexingStrategy(header);
+            var config = new EblReaderConfig
+            {
+                NameDictionary = nameDictionary,
+                IndexingStrategy = indexingStrategy,
+                LeaveDataOpen = false
+            };
+
+            var dfs = File.OpenRead(dataPath);
+            return new EblReader(config, header, dfs);
+        }
+
+        #endregion
+
+        #region File Exists
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool FileExists(string name)
             => FileHeaderExists(name);
+
+        #endregion
 
         #region Enumerate Files
 
