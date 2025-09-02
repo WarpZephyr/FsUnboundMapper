@@ -1442,7 +1442,8 @@ namespace FsUnboundMapper
         private bool TryReadParamSfo([NotNullWhen(true)] out PARAMSFO? sfo)
         {
             // Get the USRDIR folder
-            if (Root.EndsWith("USRDIR"))
+            string ebootPath = Path.Combine(Root, "EBOOT.BIN");
+            if (Root.EndsWith("USRDIR", StringComparison.InvariantCultureIgnoreCase) || File.Exists(ebootPath))
             {
                 // Get the PS3_GAME folder (disc) or root game folder (digital).
                 string? parentDir = Path.GetDirectoryName(Root);
@@ -1450,8 +1451,7 @@ namespace FsUnboundMapper
                 {
                     // Determine which game we are loose loading for by PARAM.SFO
                     string sfoPath = Path.Combine(parentDir, "PARAM.SFO");
-                    if (File.Exists(sfoPath)
-                        && PARAMSFO.IsRead(sfoPath, out sfo))
+                    if (File.Exists(sfoPath) && PARAMSFO.IsRead(sfoPath, out sfo))
                     {
                         return true;
                     }
