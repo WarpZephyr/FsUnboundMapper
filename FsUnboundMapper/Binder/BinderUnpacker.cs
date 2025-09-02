@@ -60,7 +60,7 @@ namespace FsUnboundMapper.Binder
             if (binderFile.CompressedSize == 0 &&
                 binderFile.UncompressedSize == 0)
             {
-                File.Create(outPath);
+                File.WriteAllBytes(outPath, []);
             }
             else
             {
