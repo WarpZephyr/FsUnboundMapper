@@ -1,6 +1,4 @@
 ﻿using FsUnboundMapper.IO;
-using FsUnboundMapper.Logging;
-using Org.BouncyCastle.Utilities;
 using SoulsFormats;
 using System;
 using System.Collections.Generic;
