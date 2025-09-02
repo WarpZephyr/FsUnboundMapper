@@ -1348,6 +1348,7 @@ namespace FsUnboundMapper
                         region = RegionType.Asia;
                         return GameType.ArmoredCoreV;
                     case "BLJM60378":
+                    case "NPJB90482": // Network Test
                         region = RegionType.Japan;
                         return GameType.ArmoredCoreV;
                     case "BLUS30516":
@@ -1364,6 +1365,7 @@ namespace FsUnboundMapper
                         return GameType.ArmoredCoreVerdictDay;
                     case "BLJM61014":
                     case "BLJM61020":
+                    case "NPJB90593": // Network Test
                         region = RegionType.Japan;
                         return GameType.ArmoredCoreVerdictDay;
                     case "BLUS31194":
