@@ -12,7 +12,7 @@ namespace FsUnboundMapper.Cryptography
                 string sdatPath = path + ".sdat";
                 if (File.Exists(sdatPath))
                 {
-                    EDAT.DecryptSdatFile(sdatPath, path);
+                    EDATA.DecryptSdata(sdatPath, path);
                 }
             }
         }
