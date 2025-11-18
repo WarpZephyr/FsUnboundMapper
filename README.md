@@ -19,10 +19,10 @@ Primarily for Armored Core games before AC6 for now.
 # Requirements for use
 The game files must be removed from any XISO, ISO, zip, 7z, or rar they are in.   
 
-Make sure the .NET 8.0 runtime is installed or the terminal window will immediately close:  
-https://dotnet.microsoft.com/en-us/download/dotnet/8.0  
+Make sure the .NET 9.0 runtime is installed or the terminal window will immediately close:  
+https://dotnet.microsoft.com/en-us/download/dotnet/9.0  
 
-Select ".NET Desktop Runtime" if you are on Windows and don't mind extra support for other .NET 8.0 programs using UI.  
+Select ".NET Desktop Runtime" if you are on Windows and don't mind extra support for other .NET 9.0 programs using UI.  
 Select ".NET Runtime" otherwise.  
 
 Most users will need the x64 installer.  
