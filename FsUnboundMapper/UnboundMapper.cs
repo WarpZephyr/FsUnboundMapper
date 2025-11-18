@@ -805,6 +805,9 @@ namespace FsUnboundMapper
             if (!CheckSplitFileExists(scriptHeaderPath, scriptDataPath))
                 return;
 
+            if (!CheckSplitFileNotEmpty(scriptHeaderPath, scriptDataPath))
+                return;
+
             string aiScriptDir = Path.Combine(Root, "airesource", "script");
             string sceneScriptDir = Path.Combine(Root, "scene");
 
@@ -1025,8 +1028,22 @@ namespace FsUnboundMapper
             return true;
         }
 
+        private static bool CheckFileNotEmpty(string path)
+        {
+            if (new FileInfo(path).Length < 1)
+            {
+                Log.WriteLine($"Warning: File at \"{Path.GetFileName(path)}\" is unexpectedly empty.");
+                return false;
+            }
+
+            return true;
+        }
+
         private static bool CheckSplitFileExists(string headerPath, string dataPath)
             => CheckFileExists(headerPath) && CheckFileExists(dataPath);
+
+        private static bool CheckSplitFileNotEmpty(string headerPath, string dataPath)
+           => CheckFileNotEmpty(headerPath) && CheckFileNotEmpty(dataPath);
 
         #endregion
 
