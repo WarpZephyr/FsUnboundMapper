@@ -214,7 +214,8 @@ namespace FsUnboundMapper
                 PackAcvMaps(modelMapDir);
 
             string soundDir = Path.Combine(Root, "sound");
-            if (AppConfig.Instance.ApplyFmodCrashFix &&
+            if (Platform == PlatformType.PlayStation3 &&
+                AppConfig.Instance.ApplyFmodCrashFix &&
                 CheckDirectoryExists(soundDir))
                 ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
 
@@ -253,7 +254,8 @@ namespace FsUnboundMapper
                 Root, "*.bnd", SearchOption.TopDirectoryOnly);
 
             string soundDir = Path.Combine(Root, "sound");
-            if (AppConfig.Instance.ApplyFmodCrashFix &&
+            if (Platform == PlatformType.PlayStation3 &&
+                AppConfig.Instance.ApplyFmodCrashFix &&
                 CheckDirectoryExists(soundDir))
                 ApplyFmodCrashFix(soundDir, "se_weapon.fsb");
 
