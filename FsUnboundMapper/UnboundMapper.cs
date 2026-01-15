@@ -815,7 +815,7 @@ namespace FsUnboundMapper
             foreach (var file in bnd.Files)
             {
                 string outName = PathCleaner.CleanComponentPath(file.Name);
-                string baseDir = outName.EndsWith("scene.lc", StringComparison.InvariantCultureIgnoreCase) ? sceneScriptDir : aiScriptDir;
+                string baseDir = outName.Contains("scene", StringComparison.InvariantCultureIgnoreCase) ? sceneScriptDir : aiScriptDir;
                 string outPath = PathCleaner.CreatePath(baseDir, outName);
                 BinderUnpacker.UnpackBinderFile(bnd, file, outPath);
             }
